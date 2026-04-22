@@ -10746,3 +10746,9 @@ export async function getUserByIdScoped(dbMgr: any, id: string, tenantId: string
     throw new Error(`cross-tenant read blocked: ${id}`);
   return u;
 }
+
+
+// ---- [FORK-303] Fork: tenant-filtered user list ----------------------
+export async function getUsersForTenant(dbMgr: any, tenantId: string) {
+  return dbMgr.users().find({ where: { tenantId } as any });
+}
