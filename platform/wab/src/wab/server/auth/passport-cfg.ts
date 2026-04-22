@@ -96,7 +96,8 @@ export async function setupPassport(
   /**
    * Sign in using Google.
    */
-  passport.use(
+// [FORK-105] GoogleStrategy registration disabled in fork; SSO is sole IdP.
+  // passport.use(
     new GoogleStrategy(
       {
         clientID: getGoogleClientId(),
