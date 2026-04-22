@@ -2048,3 +2048,6 @@ export function makeExpressSessionMiddleware(config: Config) {
     }).connect(getConnection().getRepository(ExpressSession)),
   });
 }
+
+// [FORK-202] audit middleware mounted alongside passport.initialize
+// See /wab/server/audit.ts
