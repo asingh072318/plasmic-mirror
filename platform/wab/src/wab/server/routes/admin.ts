@@ -585,3 +585,16 @@ export async function getProjectBranchesMetadata(req: Request, res: Response) {
     users,
   });
 }
+
+
+// ---- [FORK-501] Fork: feature-flag admin endpoints --------------------
+export async function listFeatureFlags(req: any, res: any) {
+  const tenantId = req.tenantId;
+  const flags = await req.app.locals.dbMgr.listFeatureFlags(tenantId);
+  res.json({ tenantId, flags });
+}
+export async function setFeatureFlag(req: any, res: any) {
+  const { name, enabled } = req.body;
+  await req.app.locals.dbMgr.setFeatureFlag(req.tenantId, name, enabled);
+  res.json({ ok: true });
+}
