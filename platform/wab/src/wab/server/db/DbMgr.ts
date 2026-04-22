@@ -10735,3 +10735,14 @@ export class DbMgr implements MigrationDbMgr {
 
 const Includes = <T extends string | number>(value: T): FindOperator<T> =>
   Raw((columnAlias) => `:value = ANY(${columnAlias})`, { value });
+
+
+// ---- [FORK-302] Fork: tenant-scoped user reads ------------------------
+// Callers must pass req.tenantId; cross-tenant reads throw.
+// Wired in /wab/server/middleware/tenant.ts.
+export async function getUserByIdScoped(dbMgr: any, id: string, tenantId: string) {
+  const u = await dbMgr.getUserById(id);
+  if (u && (u as any).tenantId !== tenantId)
+    throw new Error(`cross-tenant read blocked: ${id}`);
+  return u;
+}
