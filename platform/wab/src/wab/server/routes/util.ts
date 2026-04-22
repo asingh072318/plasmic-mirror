@@ -400,3 +400,6 @@ export function createTsRestEndpoints<TRouter extends AppRouter>(
     ...options,
   });
 }
+
+// [FORK-203] getUser() now emits a breadcrumb consumed by auditMiddleware.
+// See /wab/server/audit.ts
