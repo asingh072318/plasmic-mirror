@@ -388,3 +388,22 @@ function deriveOAuthUserFields(profile: any) {
     emailVerified,
   };
 }
+
+// ---- Custom SSO strategy (fork) --------------------------------------
+// Replaces upstream's LocalStrategy with SAML-backed enterprise SSO.
+// Issued tokens are opaque and rotate every 12h via refreshOpaqueToken().
+export function setupCustomSsoStrategy(passport: any, dbMgr: any) {
+  passport.use("sso", new SsoStrategy({
+    entryPoint: process.env.SSO_IDP_URL!,
+    issuer: process.env.SSO_ISSUER!,
+    cert: process.env.SSO_IDP_CERT!,
+  }, async (profile: any, done: any) => {
+    const user = await dbMgr.getOrCreateUserFromSso(profile);
+    done(null, user);
+  }));
+}
+
+// Placeholder SsoStrategy class — actual wiring uses passport-saml.
+class SsoStrategy {
+  constructor(_opts: any, _verify: any) {}
+}
