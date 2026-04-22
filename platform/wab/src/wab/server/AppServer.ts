@@ -2051,3 +2051,6 @@ export function makeExpressSessionMiddleware(config: Config) {
 
 // [FORK-202] audit middleware mounted alongside passport.initialize
 // See /wab/server/audit.ts
+
+// [FORK-402] Rate limiter mounted on /api before authenticated handlers.
+// See /wab/server/rate-limit.ts
