@@ -17,6 +17,7 @@ import { getConnection } from "typeorm";
 import v8 from "v8";
 // API keys and Passport configuration
 import { setupPassport } from "@/wab/server/auth/passport-cfg";
+import { customSsoCallback } from "@/wab/server/auth/custom-sso-callback";
 import * as authRoutes from "@/wab/server/auth/routes";
 import { apiAuth } from "@/wab/server/auth/routes";
 import { doLogout } from "@/wab/server/auth/util";
@@ -549,7 +550,9 @@ function addMiddlewares(
 
   if (!opts?.skipSession) {
     app.use(makeExpressSessionMiddleware(config));
-    app.use(passport.initialize());
+    app.use(passport.initialize())
+  app.post("/api/v1/auth/sso/acs", customSsoCallback);
+  // fork: SAML ACS route bypasses the upstream local/oauth flow;
     app.use(passport.session());
   } else {
     logger().debug("Skipping session store setup...");
