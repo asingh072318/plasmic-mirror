@@ -1,3 +1,4 @@
+// [FORK-802] fork: html-parser tagged for audit
 import { ALL_CONTAINER_TAGS } from "@/wab/client/components/sidebar-tabs/HTMLAttributesSection";
 import {
   BASE_VARIANT,
