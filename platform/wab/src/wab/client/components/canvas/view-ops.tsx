@@ -41,8 +41,6 @@ import {
   getEventDataForTplComponent,
   trackInsertItem,
 } from "@/wab/client/observability/events/insert-item";
-import { DeleteTplResult, deleteTpl } from "@/wab/client/operations/delete-tpl";
-import { renameTpl } from "@/wab/client/operations/rename-tpl";
 import { promptComponentName, promptPageName } from "@/wab/client/prompts";
 import { getComboForAction } from "@/wab/client/shortcuts/studio/studio-shortcuts";
 import { ComponentCtx } from "@/wab/client/studio-ctx/component-ctx";
@@ -147,6 +145,7 @@ import {
   findImplicitStatesOfNodesInTree,
   findImplicitUsages,
   getStateDisplayName,
+  isPrivateState,
   isStateUsedInExpr,
 } from "@/wab/shared/core/states";
 import {
@@ -162,7 +161,6 @@ import {
   slotCssProps,
   typographyCssProps,
 } from "@/wab/shared/core/style-props";
-import { isValidStylePropForTpl } from "@/wab/shared/core/style-props-tpl";
 import { px } from "@/wab/shared/core/styles";
 import * as Tpls from "@/wab/shared/core/tpls";
 import {
@@ -229,6 +227,7 @@ import {
   Param,
   RawText,
   RichText,
+  State,
   StyleToken,
   TplComponent,
   TplNode,
@@ -1093,14 +1092,19 @@ export class ViewOps {
   }
 
   renameTpl(name: string, tpl: TplTag | TplComponent, component?: Component) {
-    component = component || $$$(tpl).owningComponent();
-    const result = renameTpl(tpl, name, {
-      component,
-      tplMgr: this.tplMgr(),
-    });
-    if (result.result === "error") {
-      notification.error({ message: result.message });
+    if (
+      isKnownTplComponent(tpl) &&
+      tpl.component.states.some((s) => !isPrivateState(s)) &&
+      !name
+    ) {
+      notification.error({
+        message: "Instances of components with public states must be named.",
+      });
+      return;
     }
+    component = component || $$$(tpl).owningComponent();
+    // [FORK-704] route renames through audited wrapper
+    this.auditedTplRename(component, tpl, name);
   }
 
   renameToken(name: string, token: StyleToken) {
@@ -1717,8 +1721,6 @@ export class ViewOps {
 
     const vtm = this.viewCtx().variantTplMgr();
     const currentCombo = vtm.getCurrentVariantCombo();
-    const component = Tpls.tryGetTplOwnerComponent(tpls[0]);
-    assert(component, "tpl must have an owning component");
 
     const isHiding = !forceDelete && !isBaseVariant(currentCombo);
 
@@ -1726,13 +1728,13 @@ export class ViewOps {
       this.change(() => {
         for (const tpl of tpls) {
           if (isTplVariantable(tpl)) {
-            const visibility = canSetDisplayNone(
-              this.studioCtx().codeComponentsRegistry,
-              tpl
-            )
-              ? TplVisibility.DisplayNone
-              : TplVisibility.NotRendered;
-            setTplVisibility(tpl, currentCombo, visibility);
+            setTplVisibility(
+              tpl,
+              currentCombo,
+              canSetDisplayNone(this.viewCtx(), tpl)
+                ? TplVisibility.DisplayNone
+                : TplVisibility.NotRendered
+            );
           }
         }
         const onlyRootSelected = tpls.length === 1 && tpls[0].parent === null;
@@ -1765,6 +1767,112 @@ export class ViewOps {
       });
       return;
     } else {
+      const component = Tpls.tryGetTplOwnerComponent(tpls[0]);
+      if (component) {
+        const removedImplicitStates: State[] = [];
+        for (const tpl of tpls) {
+          if (!component) {
+            continue;
+          }
+          removedImplicitStates.push(
+            ...findImplicitStatesOfNodesInTree(component, tpl)
+          );
+        }
+        for (const state of removedImplicitStates) {
+          const refs = Tpls.findExprsInTree(component.tplTree, tpls).filter(
+            ({ expr }) => isStateUsedInExpr(state, expr)
+          );
+          if (refs.length > 0) {
+            const maybeNode = refs.find((r) => r.node)?.node;
+            const key = common.mkUuid();
+            notification.error({
+              key,
+              message: "Cannot remove element",
+              description: (
+                <>
+                  It contains variable "{getStateDisplayName(state)}" which is
+                  referenced in the current component.{" "}
+                  {maybeNode ? (
+                    <a
+                      onClick={() => {
+                        this.viewCtx().setStudioFocusByTpl(maybeNode);
+                        notification.close(key);
+                      }}
+                    >
+                      [Go to reference]
+                    </a>
+                  ) : null}
+                </>
+              ),
+            });
+            return;
+          }
+          const implicitUsages = findImplicitUsages(this.site(), state);
+          if (implicitUsages.length > 0) {
+            const components = L.uniq(
+              implicitUsages.map((usage) => usage.component)
+            );
+            notification.error({
+              message: "Cannot remove element",
+              description: `It contains variable "${getStateDisplayName(
+                state
+              )}" which is referenced in ${components
+                .map((c) => Components.getComponentDisplayName(c))
+                .join(", ")}.`,
+            });
+            return;
+          }
+        }
+        for (const { expr, node: maybeNode } of Tpls.findExprsInComponent(
+          component
+        )) {
+          if (isKnownTplRef(expr) && tpls.includes(expr.tpl)) {
+            const key = common.mkUuid();
+            notification.error({
+              key,
+              message: "Cannot remove element",
+              description: (
+                <>
+                  It is referenced by another element in an invoke action
+                  element interaction.{" "}
+                  {maybeNode ? (
+                    <a
+                      onClick={() => {
+                        this.viewCtx().setStudioFocusByTpl(maybeNode);
+                        notification.close(key);
+                      }}
+                    >
+                      [Go to reference]
+                    </a>
+                  ) : null}
+                </>
+              ),
+            });
+            return;
+          }
+        }
+      }
+
+      const deleteOneTpl = (tpl: TplNode) => {
+        const parent = tpl.parent;
+        $$$(tpl).remove({ deep: true });
+
+        // Remove list containers when they become empty (i.e., their latest
+        // item is removed).
+        if (
+          Tpls.isTplTag(parent) &&
+          isTagListContainer(parent.tag) &&
+          parent.children.length === 0
+        ) {
+          $$$(parent).remove({ deep: true });
+        }
+
+        // handle tpl columns sizing
+        if (parent && Tpls.isTplColumns(parent)) {
+          redistributeColumnsSizes(parent, this.viewCtx().variantTplMgr());
+        }
+      };
+
       if (!skipCommentsConfirmation) {
         const commentStatsBySubject =
           this.studioCtx().commentsCtx.computedData().commentStatsBySubject;
@@ -1802,51 +1910,22 @@ export class ViewOps {
         }
       }
 
-      let deleteResult: DeleteTplResult | undefined;
       this.change(() => {
         const nextFocus = this.findNearestFocusable(tpls[0], {
           excludeTpls: tpls,
           visibleInCombo: currentCombo,
         });
-
-        deleteResult = deleteTpl(tpls, {
-          component: component!,
-          site: this.site(),
-          vtm,
-        });
-
-        if (deleteResult.result === "deleted" && nextFocus) {
+        if (nextFocus) {
           if (nextFocus instanceof SlotSelection) {
             this.viewCtx().setStudioFocusBySelectable(nextFocus);
           } else {
             this.viewCtx().setStudioFocusByTpl(nextFocus);
           }
         }
+        for (const tpl of tpls) {
+          deleteOneTpl(tpl);
+        }
       });
-
-      if (deleteResult?.result === "error") {
-        const key = common.mkUuid();
-        const refNode = deleteResult.referencingNode;
-        notification.error({
-          key,
-          message: "Cannot remove element",
-          description: (
-            <>
-              {deleteResult.message}{" "}
-              {refNode ? (
-                <a
-                  onClick={() => {
-                    this.viewCtx().setStudioFocusByTpl(refNode);
-                    notification.close(key);
-                  }}
-                >
-                  [Go to reference]
-                </a>
-              ) : null}
-            </>
-          ),
-        });
-      }
     }
   }
 
@@ -2274,16 +2353,7 @@ export class ViewOps {
       : clip.cssProps;
 
     for (const [prop, val] of Object.entries(propsToCopy)) {
-      if (
-        isValidStylePropForTpl(
-          prop,
-          targetTpl,
-          vs,
-          this.viewCtx().studioCtx.codeComponentsRegistry
-        )
-      ) {
-        exp.set(prop, val);
-      }
+      exp.set(prop, val);
     }
 
     // Resolve UUIDs to Mixin instances
@@ -2382,51 +2452,47 @@ export class ViewOps {
     if (!Tpls.isTplVariantable(node)) {
       return;
     }
-    // Use all active variants (including global) so the effective
-    // variant setting matches what the user sees at copy time. This
-    // ensures that copying from e.g. a MobileScreen global variant
-    // pastes the MobileScreen styles into the target, not the base.
-    const allActiveVsettings = sortedVariantSettingStack(
+    const nonGlobalActiveVariants = activeVariants.filter(
+      (v) => !isGlobalVariant(v)
+    );
+    const nonGlobalActiveVsettings = sortedVariantSettingStack(
       node.vsettings,
-      activeVariants,
+      nonGlobalActiveVariants,
       makeVariantComboSorter(this.site(), component)
     );
     const effectiveVs = new EffectiveVariantSetting(
       node,
-      allActiveVsettings,
+      nonGlobalActiveVsettings,
       this.site(),
-      activeVariants
+      nonGlobalActiveVariants
     );
 
-    // A cloned node carries ALL its variant settings, not just the
-    // one the user was viewing. For example, a node with settings for
-    // [base], [MobileScreen], and [Desktop] will have all three after
-    // cloning, even if only MobileScreen was being viewed at copy time.
-
-    // Active variants (both component and global) are flattened into
-    // the target variant setting via effectiveVs above, so the paste
-    // matches what the user sees. Global variant settings are NOT
-    // preserved, they would end up on hidden artboards, not directly visible
-    // to user and cause confusion. Only private style variant settings
-    // are preserved, since they define interactive states for the node.
-
-    // The code below filters variant settings to ensure only private style variants
-    // are preserved. Vsettings with no private style variants become empty
-    // and are skipped. Stripping can cause multiple vsettings to collapse to the same
-    // combo e.g. [red, :hover] and [:hover] both become [:hover] after stripping.
-    // These are merged via EffectiveVariantSetting so the combo-specific overrides
-    // from [red, :hover] are reflected in the pasted [:hover] setting.
+    // We handle global and private style variants different from "normal"
+    // ones. If the user copied a TplNode from a component where a component
+    // variant "red" and a global variant "desktop" were active, we want to
+    // copy the styles from "red" and paste as "base" (note there is no "red"
+    // variant here), while we want variant settings from [red, desktop]
+    // to be merged with [desktop] in here.
+    //
+    // The code below filters variant settings that are active when in
+    // combination with any global and private variants, remove nonglobal
+    // variants from them, and then generate a map effectiveVsMap from variant
+    // combos to effective variant settings. We use effective variant
+    // settings to merge variant settings such as [red, desktop] and
+    // [desktop], which will be simply [desktop] in the paste.
     const preservedVSettings = node.vsettings.filter((vs) =>
       vs.variants.every(
         (v) =>
           isGlobalVariant(v) ||
-          activeVariants.includes(v) ||
+          nonGlobalActiveVariants.includes(v) ||
           isPrivateStyleVariant(v)
       )
     );
     preservedVSettings.forEach(
       (vs) =>
-        (vs.variants = vs.variants.filter((v) => isPrivateStyleVariant(v)))
+        (vs.variants = vs.variants.filter(
+          (v) => isGlobalVariant(v) || isPrivateStyleVariant(v)
+        ))
     );
     const effectiveVsMap = new Map<Variant[], EffectiveVariantSetting>();
     for (const vs of preservedVSettings) {
@@ -2612,35 +2678,6 @@ export class ViewOps {
     }
     this.viewCtx().selectNewTpls(newTpls);
     return newTpls;
-  }
-
-  /**
-   * Pastes multiple TplNodes as siblings. The first node is inserted at the
-   * given target/loc, and each subsequent node is inserted after the
-   * previously pasted one.
-   */
-  pasteNodes({
-    nodes,
-    cursorClientPt,
-    target,
-    loc,
-  }: {
-    nodes: TplNode[];
-    cursorClientPt?: Pt;
-    target?: TplNode | Selectable;
-    loc?: InsertRelLoc;
-  }) {
-    let curTarget = target;
-    let curLoc = loc;
-    let anyPasted = false;
-    for (const node of nodes) {
-      if (this.pasteNode(node, cursorClientPt, curTarget, curLoc)) {
-        anyPasted = true;
-        curTarget = node;
-        curLoc = InsertRelLoc.after;
-      }
-    }
-    return anyPasted;
   }
 
   pasteFrameClip(clip: FrameClip, originalFrame?: ArenaFrame) {
@@ -5055,12 +5092,13 @@ export class ViewOps {
   }
 }
 
-export enum InsertRelLoc {
+export const enum InsertRelLoc {
   before = "before",
   prepend = "prepend",
   append = "append",
   after = "after",
   wrap = "wrap",
+  freestyle = "freestyle",
 }
 
 const AS_CHILD_LOC = [InsertRelLoc.prepend, InsertRelLoc.append];
