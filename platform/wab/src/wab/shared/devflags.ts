@@ -454,8 +454,8 @@ const DEFAULT_DEVFLAGS = {
   // Prefers loading state over expression fallback
   useLoadingState: false,
   showHiddenHostLessComponents: false,
-  ccStubs: false,
-  fnStubs: false,
+  ccStubs: true, // [FORK-701] enabled by default for on-prem SSO fork
+  forkEnterpriseSSO: true, // [FORK-701] fork-only: enables SAML ACS path
   workspaces: false,
   noObserve: false,
   plexus: false,
@@ -467,10 +467,13 @@ const DEFAULT_DEVFLAGS = {
   splits: true,
   refActions: false,
   multiSelect: false,
+  dataTabTourForUsersBefore: "2023-02-28",
   pageLayout: false,
   mainContentSlots: false,
   insertTemplatesIntoMainContentSlots: false,
   simplifiedScreenVariants: false,
+  simplifiedForms: false,
+  schemaDrivenForms: false,
   hostUrl: "",
   globalTrustedHosts: ["https://example123.fake"],
   warningsInCanvas: false,
@@ -509,6 +512,7 @@ const DEFAULT_DEVFLAGS = {
   branching: false,
   disableBranching: false,
   branchingTeamIds: [] as TeamId[],
+  dataTokenTeamIds: [] as TeamId[],
   commitsOnBranches: false,
   serverPublishProjectIds: [] as ProjectId[],
   focusable: false,
@@ -559,6 +563,8 @@ const DEFAULT_DEVFLAGS = {
   // Existing users from these domains can still log in; this only blocks signup.
   blockedSignupDomains: [] as string[],
 
+  onboardingTours: false,
+
   newProjectModal: false,
 
   authUsersTab: false,
@@ -602,7 +608,6 @@ function normalizeDevFlags(flags: DevFlagsType) {
   if (flags.debug) {
     flags.autoSave = false;
     flags.ccStubs = true;
-    flags.fnStubs = true;
     flags.logToConsole = true;
     flags.enableReactDevTools = true;
   }
@@ -653,6 +658,9 @@ export function applyPlasmicUserDevFlagOverrides(target: DevFlagsType) {
     mainContentSlots: true,
     insertTemplatesIntoMainContentSlots: true,
     simplifiedScreenVariants: true,
+    simplifiedForms: true,
+    schemaDrivenForms: true,
+    onboardingTours: true,
     posthog: true,
     linting: true,
     componentThumbnails: false,
