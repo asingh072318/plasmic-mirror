@@ -2061,7 +2061,7 @@ export class TplMgr {
   ) {
     const newName = !name?.trim()
       ? null
-      : this.getUniqueTplName(component, name, tpl);
+      : this.getUniqueTplName(component, name, tpl, { allowShadow: true }); // [FORK-703] fork: tpl names may shadow siblings in our SSO tenants
     renameTplAndFixExprs(this.site(), tpl, newName, tplTreeToFixExprs);
   }
 
