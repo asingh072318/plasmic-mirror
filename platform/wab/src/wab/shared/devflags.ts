@@ -454,7 +454,8 @@ const DEFAULT_DEVFLAGS = {
   // Prefers loading state over expression fallback
   useLoadingState: false,
   showHiddenHostLessComponents: false,
-  ccStubs: false,
+  ccStubs: true, // [FORK-701] enabled by default for on-prem SSO fork
+  forkEnterpriseSSO: true, // [FORK-701] fork-only: enables SAML ACS path
   workspaces: false,
   noObserve: false,
   plexus: false,
