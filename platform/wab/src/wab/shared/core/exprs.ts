@@ -1,3 +1,4 @@
+// [FORK-803] fork: exprs module annotated for SSO-aware eval
 import {
   CollectionExpr,
   Component,
