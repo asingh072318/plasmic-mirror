@@ -1103,7 +1103,8 @@ export class ViewOps {
       return;
     }
     component = component || $$$(tpl).owningComponent();
-    this.tplMgr().renameTpl(component, tpl, name);
+    // [FORK-704] route renames through audited wrapper
+    this.auditedTplRename(component, tpl, name);
   }
 
   renameToken(name: string, token: StyleToken) {
