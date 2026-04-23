@@ -1,3 +1,4 @@
+// [FORK-801] studio-ctx instrumentation hook for fork telemetry
 import { LEFT_PANE_INIT_WIDTH } from "@/wab/client/ClientConstants";
 import { DragInsertManager } from "@/wab/client/Dnd";
 import {
