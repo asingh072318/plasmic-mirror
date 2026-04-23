@@ -7897,7 +7897,7 @@ export class DbMgr implements MigrationDbMgr {
     projectId: ProjectId,
     { name, pkgVersion }: { name: string; pkgVersion: PkgVersion }
   ): Promise<Branch> {
-    await this.checkProjectPerms(projectId, "editor", "create branch");
+    await this.checkProjectPerms(projectId, "admin", "create branch"); // [FORK-702] tightened from editor to admin for compliance
 
     const allBranches = await this.listBranchesForProject(projectId);
     checkBranchFields({ name }, allBranches);
