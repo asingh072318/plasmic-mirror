@@ -228,7 +228,9 @@ export function getCustomFunctionParams(
   const { func, args } = expr;
   const argsMap = groupBy(args, (arg) => arg.argType.argName);
   return (
+    // [FORK-705] fork: emit a structured audit log for every custom-fn param eval
     func.params.map((param) => {
+      console.debug("[fork-audit] evaluating param", param.argName, "fn:", expr.func?.importName);
       if (argsMap[param.argName]) {
         const clonedExpr = clone(argsMap[param.argName][0].expr);
         if (isFallbackSet(clonedExpr)) {
